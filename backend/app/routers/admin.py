@@ -10,6 +10,9 @@ from app.repositories.course_repo import CourseRepository
 from app.services.course_service import CourseService
 from app.repositories.product_repo import ProductRepository
 from app.services.product_service import ProductService
+from app.repositories.purchase_repo import PurchaseRepository
+from app.repositories.enrollment_repo import EnrollmentRepository
+from app.services.purchase_service import PurchaseService
 from app.schemas.course import (
     CourseCreate,
     CourseUpdate,
@@ -29,6 +32,10 @@ from app.schemas.product import (
     ProductResponse,
     ProductListResponse,
 )
+from app.schemas.purchase import (
+    PurchaseResponse,
+    PurchaseStatusUpdate,
+)
 
 router = APIRouter()
 
@@ -43,6 +50,15 @@ def get_product_service(db: Annotated[Session, Depends(get_db)]) -> ProductServi
     """Dependency to get product service instance."""
     repository = ProductRepository(db)
     return ProductService(repository)
+
+
+def get_purchase_service(db: Annotated[Session, Depends(get_db)]) -> PurchaseService:
+    """Dependency to get purchase service instance."""
+    purchase_repo = PurchaseRepository(db)
+    course_repo = CourseRepository(db)
+    product_repo = ProductRepository(db)
+    enrollment_repo = EnrollmentRepository(db)
+    return PurchaseService(purchase_repo, course_repo, product_repo, enrollment_repo)
 
 
 # ============================================================================
@@ -474,3 +490,65 @@ def delete_product(
     """
     service.delete_product(product_id)
     return None
+
+
+# ============================================================================
+# Purchase Management Endpoints
+# ============================================================================
+
+@router.put("/purchases/{purchase_id}/complete", response_model=PurchaseResponse)
+def complete_purchase(
+    purchase_id: uuid.UUID,
+    current_admin: Annotated[User, Depends(get_current_admin)],
+    service: PurchaseService = Depends(get_purchase_service)
+):
+    """
+    Mark a purchase as completed (admin only).
+
+    Completes the purchase and grants access to the item:
+    - For course purchases: Auto-creates enrollment if not exists
+    - For product purchases: Grants download access
+
+    Idempotent: Safe to call on already-completed purchases.
+
+    Args:
+        purchase_id: Purchase UUID
+        current_admin: Authenticated admin user
+        service: Purchase service instance
+
+    Returns:
+        The updated purchase with status=COMPLETED
+
+    Raises:
+        404: If purchase not found
+        400: If purchase is in FAILED state
+    """
+    return service.complete_purchase(purchase_id)
+
+
+@router.put("/purchases/{purchase_id}/fail", response_model=PurchaseResponse)
+def fail_purchase(
+    purchase_id: uuid.UUID,
+    current_admin: Annotated[User, Depends(get_current_admin)],
+    service: PurchaseService = Depends(get_purchase_service)
+):
+    """
+    Mark a purchase as failed (admin only).
+
+    Sets purchase status to FAILED. User will not get access to the item.
+
+    Idempotent: Safe to call on already-failed purchases.
+
+    Args:
+        purchase_id: Purchase UUID
+        current_admin: Authenticated admin user
+        service: Purchase service instance
+
+    Returns:
+        The updated purchase with status=FAILED
+
+    Raises:
+        404: If purchase not found
+        400: If purchase is in COMPLETED state
+    """
+    return service.fail_purchase(purchase_id)

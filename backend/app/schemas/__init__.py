@@ -33,6 +33,12 @@ from app.schemas.enrollment import (
     EnrollmentResponse,
     SignedUrlResponse,
 )
+from app.schemas.purchase import (
+    PurchaseCreate,
+    PurchaseResponse,
+    PurchaseWithDetails,
+    PurchaseStatusUpdate,
+)
 
 __all__ = [
     "UserCreate",
@@ -62,4 +68,8 @@ __all__ = [
     "EnrollmentProgressUpdate",
     "EnrollmentResponse",
     "SignedUrlResponse",
+    "PurchaseCreate",
+    "PurchaseResponse",
+    "PurchaseWithDetails",
+    "PurchaseStatusUpdate",
 ]

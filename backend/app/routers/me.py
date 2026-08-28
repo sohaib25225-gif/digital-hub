@@ -9,9 +9,11 @@ from app.db.models.user import User
 from app.repositories.enrollment_repo import EnrollmentRepository
 from app.repositories.course_repo import CourseRepository
 from app.repositories.product_repo import ProductRepository
+from app.repositories.purchase_repo import PurchaseRepository
 from app.services.enrollment_service import EnrollmentService
 from app.services.access_service import AccessService
 from app.services.storage_service import StorageService
+from app.services.purchase_service import PurchaseService
 from app.schemas.enrollment import (
     EnrollmentCreate,
     EnrollmentResponse,
@@ -19,6 +21,11 @@ from app.schemas.enrollment import (
     SignedUrlResponse,
 )
 from app.schemas.course import CourseDetailResponse
+from app.schemas.purchase import (
+    PurchaseCreate,
+    PurchaseResponse,
+    PurchaseWithDetails,
+)
 
 router = APIRouter()
 
@@ -36,6 +43,15 @@ def get_access_service(db: Annotated[Session, Depends(get_db)]) -> AccessService
     course_repo = CourseRepository(db)
     product_repo = ProductRepository(db)
     return AccessService(enrollment_repo, course_repo, product_repo)
+
+
+def get_purchase_service(db: Annotated[Session, Depends(get_db)]) -> PurchaseService:
+    """Dependency to get purchase service instance."""
+    purchase_repo = PurchaseRepository(db)
+    course_repo = CourseRepository(db)
+    product_repo = ProductRepository(db)
+    enrollment_repo = EnrollmentRepository(db)
+    return PurchaseService(purchase_repo, course_repo, product_repo, enrollment_repo)
 
 
 # ============================================================================
@@ -353,3 +369,120 @@ def download_product(
 
     finally:
         db.close()
+
+
+# ============================================================================
+# Purchase Endpoints
+# ============================================================================
+
+@router.post("/purchases", response_model=PurchaseResponse, status_code=status.HTTP_201_CREATED)
+def create_purchase(
+    purchase_data: PurchaseCreate,
+    current_user: Annotated[User, Depends(get_current_user)],
+    service: PurchaseService = Depends(get_purchase_service)
+):
+    """
+    Create a new purchase for a course or product.
+
+    Creates a purchase in PENDING status. Admin must mark it as COMPLETED later.
+
+    Rules:
+    - Item must exist and be published
+    - Item must be paid (free courses use enrollment endpoint)
+    - No duplicate pending/completed purchases
+    - Amount must match item price
+
+    Args:
+        purchase_data: Purchase creation data
+        current_user: Authenticated user
+        service: Purchase service
+
+    Returns:
+        Created purchase (status=PENDING)
+
+    Raises:
+        400: Invalid purchase (draft, free, duplicate, price mismatch)
+        404: Item not found
+    """
+    return service.create_purchase(current_user, purchase_data)
+
+
+@router.get("/purchases", response_model=List[PurchaseWithDetails])
+def list_my_purchases(
+    current_user: Annotated[User, Depends(get_current_user)],
+    service: PurchaseService = Depends(get_purchase_service)
+):
+    """
+    List all purchases for the current user.
+
+    Includes item details (title, type).
+
+    Args:
+        current_user: Authenticated user
+        service: Purchase service
+
+    Returns:
+        List of user's purchases with item details
+    """
+    purchases_data = service.get_user_purchases(current_user)
+
+    # Convert to response format
+    results = []
+    for data in purchases_data:
+        purchase = data["purchase"]
+        results.append(
+            PurchaseWithDetails(
+                id=purchase.id,
+                user_id=purchase.user_id,
+                course_id=purchase.course_id,
+                product_id=purchase.product_id,
+                amount=purchase.amount,
+                currency=purchase.currency,
+                status=purchase.status.value,
+                created_at=purchase.created_at,
+                item_title=data["item_title"],
+                item_type=data["item_type"]
+            )
+        )
+
+    return results
+
+
+@router.get("/purchases/{purchase_id}", response_model=PurchaseWithDetails)
+def get_my_purchase(
+    purchase_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    service: PurchaseService = Depends(get_purchase_service)
+):
+    """
+    Get details of a specific purchase.
+
+    User can only view their own purchases.
+
+    Args:
+        purchase_id: Purchase ID
+        current_user: Authenticated user
+        service: Purchase service
+
+    Returns:
+        Purchase details with item information
+
+    Raises:
+        404: Purchase not found
+        403: Not authorized to access this purchase
+    """
+    purchase_data = service.get_purchase(current_user, purchase_id)
+    purchase = purchase_data["purchase"]
+
+    return PurchaseWithDetails(
+        id=purchase.id,
+        user_id=purchase.user_id,
+        course_id=purchase.course_id,
+        product_id=purchase.product_id,
+        amount=purchase.amount,
+        currency=purchase.currency,
+        status=purchase.status.value,
+        created_at=purchase.created_at,
+        item_title=purchase_data["item_title"],
+        item_type=purchase_data["item_type"]
+    )

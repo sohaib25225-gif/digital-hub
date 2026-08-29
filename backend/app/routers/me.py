@@ -225,7 +225,8 @@ def get_lesson_file(
     course_id: uuid.UUID,
     lesson_id: uuid.UUID,
     current_user: Annotated[User, Depends(get_current_user)],
-    access_service: AccessService = Depends(get_access_service)
+    access_service: AccessService = Depends(get_access_service),
+    db: Session = Depends(get_db)
 ):
     """
     Get signed URL for lesson file.
@@ -237,6 +238,7 @@ def get_lesson_file(
         lesson_id: Lesson ID
         current_user: Authenticated user
         access_service: Access service
+        db: Database session
 
     Returns:
         Signed URL for lesson file
@@ -260,47 +262,41 @@ def get_lesson_file(
 
     # Get lesson to extract file info
     from app.repositories.course_repo import CourseRepository
-    from app.db.session import SessionLocal
 
-    db = SessionLocal()
-    try:
-        course_repo = CourseRepository(db)
-        lesson = course_repo.get_lesson_by_id(lesson_id)
+    course_repo = CourseRepository(db)
+    lesson = course_repo.get_lesson_by_id(lesson_id)
 
-        if not lesson or not lesson.file_url:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Lesson file not found"
-            )
-
-        # Extract filename from URL (simplified - assumes Supabase URL structure)
-        # In production, parse the URL properly
-        filename = lesson.file_url.split('/')[-1]
-
-        # Determine bucket based on content type
-        from app.db.models.lesson import LessonContentType
-        if lesson.content_type == LessonContentType.VIDEO:
-            bucket = StorageService.BUCKET_COURSE_VIDEOS
-        elif lesson.content_type == LessonContentType.PDF:
-            bucket = StorageService.BUCKET_COURSE_PDFS
-        else:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Lesson content type does not support file download"
-            )
-
-        # Generate signed URL
-        storage_service = StorageService()
-        signed_url = storage_service.create_signed_url(
-            bucket=bucket,
-            path=filename,
-            expires_in=3600  # 1 hour
+    if not lesson or not lesson.file_url:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Lesson file not found"
         )
 
-        return SignedUrlResponse(url=signed_url, expires_in=3600)
+    # Extract filename from URL (simplified - assumes Supabase URL structure)
+    # In production, parse the URL properly
+    filename = lesson.file_url.split('/')[-1]
 
-    finally:
-        db.close()
+    # Determine bucket based on content type
+    from app.db.models.lesson import LessonContentType
+    if lesson.content_type == LessonContentType.VIDEO:
+        bucket = StorageService.BUCKET_COURSE_VIDEOS
+    elif lesson.content_type == LessonContentType.PDF:
+        bucket = StorageService.BUCKET_COURSE_PDFS
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Lesson content type does not support file download"
+        )
+
+    # Generate signed URL
+    storage_service = StorageService()
+    signed_url = storage_service.create_signed_url(
+        bucket=bucket,
+        path=filename,
+        expires_in=3600  # 1 hour
+    )
+
+    return SignedUrlResponse(url=signed_url, expires_in=3600)
 
 
 # ============================================================================
@@ -311,7 +307,8 @@ def get_lesson_file(
 def download_product(
     product_id: uuid.UUID,
     current_user: Annotated[User, Depends(get_current_user)],
-    access_service: AccessService = Depends(get_access_service)
+    access_service: AccessService = Depends(get_access_service),
+    db: Session = Depends(get_db)
 ):
     """
     Get signed URL for product download.
@@ -322,6 +319,7 @@ def download_product(
         product_id: Product ID
         current_user: Authenticated user
         access_service: Access service
+        db: Database session
 
     Returns:
         Signed URL for product file
@@ -341,34 +339,28 @@ def download_product(
 
     # Get product to extract file info
     from app.repositories.product_repo import ProductRepository
-    from app.db.session import SessionLocal
 
-    db = SessionLocal()
-    try:
-        product_repo = ProductRepository(db)
-        product = product_repo.get_product_by_id(product_id)
+    product_repo = ProductRepository(db)
+    product = product_repo.get_product_by_id(product_id)
 
-        if not product or not product.file_url:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Product file not found"
-            )
-
-        # Extract filename from URL
-        filename = product.file_url.split('/')[-1]
-
-        # Generate signed URL
-        storage_service = StorageService()
-        signed_url = storage_service.create_signed_url(
-            bucket=StorageService.BUCKET_PRODUCT_FILES,
-            path=filename,
-            expires_in=3600  # 1 hour
+    if not product or not product.file_url:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Product file not found"
         )
 
-        return SignedUrlResponse(url=signed_url, expires_in=3600)
+    # Extract filename from URL
+    filename = product.file_url.split('/')[-1]
 
-    finally:
-        db.close()
+    # Generate signed URL
+    storage_service = StorageService()
+    signed_url = storage_service.create_signed_url(
+        bucket=StorageService.BUCKET_PRODUCT_FILES,
+        path=filename,
+        expires_in=3600  # 1 hour
+    )
+
+    return SignedUrlResponse(url=signed_url, expires_in=3600)
 
 
 # ============================================================================

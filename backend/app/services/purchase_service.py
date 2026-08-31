@@ -1,5 +1,5 @@
 import uuid
-from typing import List
+from typing import List, Dict, Any
 from fastapi import HTTPException, status
 from decimal import Decimal
 
@@ -12,6 +12,7 @@ from app.db.models.purchase import Purchase, PurchaseStatus
 from app.db.models.user import User
 from app.db.models.course import CourseStatus
 from app.db.models.product import ProductStatus
+from app.services.safepay_client import SafepayClient
 
 
 class PurchaseService:
@@ -22,24 +23,26 @@ class PurchaseService:
         purchase_repo: PurchaseRepository,
         course_repo: CourseRepository,
         product_repo: ProductRepository,
-        enrollment_repo: EnrollmentRepository
+        enrollment_repo: EnrollmentRepository,
+        safepay_client: SafepayClient
     ):
         self.purchase_repo = purchase_repo
         self.course_repo = course_repo
         self.product_repo = product_repo
         self.enrollment_repo = enrollment_repo
+        self.safepay_client = safepay_client
 
     # ============================================================================
-    # Purchase Creation
+    # Purchase Creation (Phase 6: Integrated with Safepay)
     # ============================================================================
 
-    def create_purchase(
+    async def create_purchase(
         self,
         user: User,
         purchase_data: PurchaseCreate
-    ) -> Purchase:
+    ) -> Dict[str, Any]:
         """
-        Create a new purchase.
+        Create a new purchase and initiate payment session (Phase 6).
 
         Validates:
         - Item exists and is published
@@ -47,29 +50,60 @@ class PurchaseService:
         - No duplicate pending/completed purchase
         - Amount matches item price
 
+        Then creates Safepay payment session and stores tracker token.
+
         Args:
             user: User object
             purchase_data: Purchase creation data
 
         Returns:
-            Created purchase
+            Dict containing:
+                - purchase: Purchase object
+                - payment_session: Payment session data from Safepay
+                - tracker_token: Safepay tracker token
 
         Raises:
-            HTTPException: If validation fails
+            HTTPException: If validation or payment session creation fails
         """
-        # Validate course purchase
+        # Validate and create purchase (existing Phase 4 logic)
         if purchase_data.course_id:
-            return self._create_course_purchase(user, purchase_data)
+            purchase = self._create_course_purchase(user, purchase_data)
+        elif purchase_data.product_id:
+            purchase = self._create_product_purchase(user, purchase_data)
+        else:
+            # Should not reach here due to Pydantic validation
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Must specify either course_id or product_id"
+            )
 
-        # Validate product purchase
-        if purchase_data.product_id:
-            return self._create_product_purchase(user, purchase_data)
+        # Create Safepay payment session (Phase 6)
+        try:
+            payment_session = await self.safepay_client.create_payment_session(
+                purchase_id=purchase.id,
+                amount=float(purchase.amount),
+                currency=purchase.currency
+            )
 
-        # Should not reach here due to Pydantic validation
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Must specify either course_id or product_id"
-        )
+            # Store tracker token in purchase
+            tracker_token = payment_session["tracker_token"]
+            self.purchase_repo.update_payment_provider_tx_id(purchase, tracker_token)
+
+            return {
+                "purchase": purchase,
+                "payment_session": payment_session,
+                "tracker_token": tracker_token
+            }
+
+        except HTTPException:
+            # Re-raise HTTP exceptions from Safepay client
+            raise
+        except Exception as e:
+            # Log and raise generic error for unexpected issues
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to initiate payment session: {str(e)}"
+            )
 
     def _create_course_purchase(
         self,

@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 import uuid
 
-from app.core.dependencies import get_current_admin
+from app.core.dependencies import get_current_admin, get_safepay_client
 from app.db.session import get_db
 from app.db.models.user import User
 from app.repositories.course_repo import CourseRepository
@@ -52,13 +52,16 @@ def get_product_service(db: Annotated[Session, Depends(get_db)]) -> ProductServi
     return ProductService(repository)
 
 
-def get_purchase_service(db: Annotated[Session, Depends(get_db)]) -> PurchaseService:
-    """Dependency to get purchase service instance."""
+def get_purchase_service(
+    db: Annotated[Session, Depends(get_db)],
+    safepay_client: Annotated["SafepayClient", Depends(get_safepay_client)]
+) -> PurchaseService:
+    """Dependency to get purchase service instance (Phase 6: with Safepay)."""
     purchase_repo = PurchaseRepository(db)
     course_repo = CourseRepository(db)
     product_repo = ProductRepository(db)
     enrollment_repo = EnrollmentRepository(db)
-    return PurchaseService(purchase_repo, course_repo, product_repo, enrollment_repo)
+    return PurchaseService(purchase_repo, course_repo, product_repo, enrollment_repo, safepay_client)
 
 
 # ============================================================================

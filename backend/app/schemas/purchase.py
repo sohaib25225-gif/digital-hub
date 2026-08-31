@@ -48,6 +48,11 @@ class PurchaseResponse(BaseModel):
     status: str  # PENDING, COMPLETED, FAILED
     created_at: datetime
 
+    # Payment provider fields (Phase 6)
+    payment_provider_tx_id: Optional[str] = None
+    payment_method: Optional[str] = None
+    updated_at: Optional[datetime] = None
+
     model_config = ConfigDict(from_attributes=True)
 
 

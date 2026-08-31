@@ -257,3 +257,44 @@ class PurchaseRepository:
         self.db.commit()
         self.db.refresh(purchase)
         return purchase
+
+    def update_payment_provider_tx_id(
+        self,
+        purchase: Purchase,
+        provider_tx_id: str
+    ) -> Purchase:
+        """
+        Update payment provider transaction ID (Phase 6).
+
+        Args:
+            purchase: Purchase to update
+            provider_tx_id: Provider transaction/tracker ID
+
+        Returns:
+            Updated purchase
+        """
+        purchase.payment_provider_tx_id = provider_tx_id
+        self.db.commit()
+        self.db.refresh(purchase)
+        return purchase
+
+    def get_purchase_by_provider_tx_id(
+        self,
+        provider_tx_id: str
+    ) -> Optional[Purchase]:
+        """
+        Get purchase by payment provider transaction ID (Phase 6).
+
+        Used by webhook handler to correlate payment to purchase.
+
+        Args:
+            provider_tx_id: Provider transaction/tracker ID (e.g., Safepay tracker)
+
+        Returns:
+            Purchase if found, None otherwise
+        """
+        return (
+            self.db.query(Purchase)
+            .filter(Purchase.payment_provider_tx_id == provider_tx_id)
+            .first()
+        )

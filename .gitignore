@@ -71,3 +71,7 @@ logs/
 *.db
 *.sqlite
 *.sqlite3
+
+# Stage 0 Credentials (sandbox testing)
+backend/STAGE0_CREDENTIALS.txt
+STAGE0_CREDENTIALS.txt

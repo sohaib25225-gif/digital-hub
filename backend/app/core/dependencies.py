@@ -7,9 +7,20 @@ from app.core.security import decode_token
 from app.db.session import get_db
 from app.db.models.user import User, UserRole
 from app.schemas.user import TokenData
+from app.services.safepay_client import SafepayClient
 
 # HTTP Bearer token security scheme
 security = HTTPBearer()
+
+
+def get_safepay_client() -> SafepayClient:
+    """
+    Dependency to get Safepay client instance.
+
+    Returns:
+        SafepayClient instance configured with settings
+    """
+    return SafepayClient()
 
 
 def get_current_user(

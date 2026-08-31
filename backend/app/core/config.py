@@ -24,6 +24,13 @@ class Settings(BaseSettings):
     MAX_FILE_SIZE_MB: int = 100
     MAX_THUMBNAIL_SIZE_MB: int = 5
 
+    # Safepay Payment Integration (Phase 6)
+    SAFEPAY_PUBLIC_KEY: str = ""
+    SAFEPAY_SECRET_KEY: str = ""
+    SAFEPAY_WEBHOOK_SECRET: str = ""
+    SAFEPAY_ENVIRONMENT: str = "sandbox"
+    SAFEPAY_BASE_URL: str = "https://sandbox.api.getsafepay.com"
+
     model_config = SettingsConfigDict(
         env_file=".env",
         case_sensitive=False,

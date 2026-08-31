@@ -2,7 +2,11 @@ import pytest
 from fastapi import status
 from sqlalchemy.orm import Session
 from decimal import Decimal
+from unittest.mock import AsyncMock
+from uuid import UUID
 
+from app.main import app
+from app.core.dependencies import get_safepay_client
 from app.db.models.user import User, UserRole
 from app.db.models.creator import Creator
 from app.db.models.course import Course, CourseStatus
@@ -10,6 +14,58 @@ from app.db.models.product import Product, ProductStatus
 from app.db.models.purchase import Purchase, PurchaseStatus
 from app.db.models.enrollment import Enrollment
 from app.core.security import get_password_hash
+
+
+# ============================================================================
+# Mock Safepay Client (Phase 6)
+# ============================================================================
+
+class MockSafepayClient:
+    """Mock Safepay client for testing purchase creation."""
+
+    async def create_payment_session(
+        self,
+        purchase_id: UUID,
+        amount: float,
+        currency: str
+    ):
+        """Mock payment session creation."""
+        return {
+            "tracker_token": f"track_test_{str(purchase_id)[:8]}",
+            "tracker_state": "TRACKER_STARTED",
+            "intent": "CYBERSOURCE",
+            "mode": "payment",
+            "next_actions": {
+                "CYBERSOURCE": {"kind": "GENERATE_CAPTURE_CONTEXT"}
+            },
+            "full_response": {
+                "data": {
+                    "tracker": {
+                        "token": f"track_test_{str(purchase_id)[:8]}",
+                        "state": "TRACKER_STARTED"
+                    }
+                }
+            }
+        }
+
+
+@pytest.fixture
+def mock_safepay_client():
+    """Provide mock Safepay client for purchase tests."""
+    return MockSafepayClient()
+
+
+@pytest.fixture(autouse=True)
+def override_safepay_dependency(mock_safepay_client):
+    """
+    Auto-override Safepay client dependency for all purchase tests.
+
+    Phase 6 integration: PurchaseService now calls SafepayClient.
+    Tests must mock this to avoid requiring real credentials.
+    """
+    app.dependency_overrides[get_safepay_client] = lambda: mock_safepay_client
+    yield
+    app.dependency_overrides.pop(get_safepay_client, None)
 
 
 # ============================================================================
@@ -185,7 +241,7 @@ def draft_product(db_session: Session, admin_user_with_creator):
 # ============================================================================
 
 def test_create_course_purchase_success(client, student_token, paid_course):
-    """Test creating a course purchase successfully."""
+    """Test creating a course purchase successfully (Phase 6: with Safepay integration)."""
     response = client.post(
         "/me/purchases",
         json={
@@ -199,15 +255,26 @@ def test_create_course_purchase_success(client, student_token, paid_course):
 
     assert response.status_code == status.HTTP_201_CREATED
     data = response.json()
-    assert data["course_id"] == str(paid_course.id)
-    assert data["product_id"] is None
-    assert Decimal(str(data["amount"])) == paid_course.price
-    assert data["currency"] == "USD"
-    assert data["status"] == "pending"
+
+    # Phase 6: Response now includes payment session info
+    assert "purchase" in data
+    assert "tracker_token" in data
+    assert data["payment_provider"] == "safepay"
+
+    # Verify purchase data
+    purchase = data["purchase"]
+    assert purchase["course_id"] == str(paid_course.id)
+    assert purchase["product_id"] is None
+    assert Decimal(str(purchase["amount"])) == paid_course.price
+    assert purchase["currency"] == "USD"
+    assert purchase["status"] == "pending"
+
+    # Verify tracker token was generated
+    assert data["tracker_token"].startswith("track_test_")
 
 
 def test_create_product_purchase_success(client, student_token, paid_product):
-    """Test creating a product purchase successfully."""
+    """Test creating a product purchase successfully (Phase 6: with Safepay integration)."""
     response = client.post(
         "/me/purchases",
         json={
@@ -221,11 +288,22 @@ def test_create_product_purchase_success(client, student_token, paid_product):
 
     assert response.status_code == status.HTTP_201_CREATED
     data = response.json()
-    assert data["product_id"] == str(paid_product.id)
-    assert data["course_id"] is None
-    assert Decimal(str(data["amount"])) == paid_product.price
-    assert data["currency"] == "PKR"
-    assert data["status"] == "pending"
+
+    # Phase 6: Response now includes payment session info
+    assert "purchase" in data
+    assert "tracker_token" in data
+    assert data["payment_provider"] == "safepay"
+
+    # Verify purchase data
+    purchase = data["purchase"]
+    assert purchase["product_id"] == str(paid_product.id)
+    assert purchase["course_id"] is None
+    assert Decimal(str(purchase["amount"])) == paid_product.price
+    assert purchase["currency"] == "PKR"
+    assert purchase["status"] == "pending"
+
+    # Verify tracker token was generated
+    assert data["tracker_token"].startswith("track_test_")
 
 
 def test_create_purchase_course_not_found(client, student_token):
@@ -439,7 +517,7 @@ def test_create_purchase_unauthenticated(client, paid_course):
 
 
 def test_currency_uppercase_normalization(client, student_token, paid_course):
-    """Test currency is normalized to uppercase."""
+    """Test currency is normalized to uppercase (Phase 6: with Safepay integration)."""
     response = client.post(
         "/me/purchases",
         json={
@@ -453,7 +531,11 @@ def test_currency_uppercase_normalization(client, student_token, paid_course):
 
     assert response.status_code == status.HTTP_201_CREATED
     data = response.json()
-    assert data["currency"] == "USD"
+
+    # Phase 6: Response now includes payment session info
+    assert "purchase" in data
+    purchase = data["purchase"]
+    assert purchase["currency"] == "USD"
 
 
 # ============================================================================

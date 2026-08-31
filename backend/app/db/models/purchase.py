@@ -28,6 +28,11 @@ class Purchase(Base):
     status = Column(SQLEnum(PurchaseStatus), default=PurchaseStatus.PENDING, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
+    # Payment provider fields (Phase 6)
+    payment_provider_tx_id = Column(String(255), nullable=True, index=True)  # Safepay tracker token
+    payment_method = Column(String(50), nullable=True)  # Optional: card, jazzcash, easypaisa, etc.
+    updated_at = Column(DateTime, nullable=True, default=datetime.utcnow, onupdate=datetime.utcnow)
+
     # Relationships
     user = relationship("User", back_populates="purchases")
     product = relationship("Product", back_populates="purchases")

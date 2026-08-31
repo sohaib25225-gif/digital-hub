@@ -3,9 +3,10 @@ from fastapi import APIRouter, Depends, status, HTTPException
 from sqlalchemy.orm import Session
 import uuid
 
-from app.core.dependencies import get_current_user
+from app.core.dependencies import get_current_user, get_safepay_client
 from app.db.session import get_db
 from app.db.models.user import User
+from app.services.safepay_client import SafepayClient
 from app.repositories.enrollment_repo import EnrollmentRepository
 from app.repositories.course_repo import CourseRepository
 from app.repositories.product_repo import ProductRepository
@@ -45,13 +46,16 @@ def get_access_service(db: Annotated[Session, Depends(get_db)]) -> AccessService
     return AccessService(enrollment_repo, course_repo, product_repo)
 
 
-def get_purchase_service(db: Annotated[Session, Depends(get_db)]) -> PurchaseService:
-    """Dependency to get purchase service instance."""
+def get_purchase_service(
+    db: Annotated[Session, Depends(get_db)],
+    safepay_client: Annotated[SafepayClient, Depends(get_safepay_client)]
+) -> PurchaseService:
+    """Dependency to get purchase service instance (Phase 6: with Safepay)."""
     purchase_repo = PurchaseRepository(db)
     course_repo = CourseRepository(db)
     product_repo = ProductRepository(db)
     enrollment_repo = EnrollmentRepository(db)
-    return PurchaseService(purchase_repo, course_repo, product_repo, enrollment_repo)
+    return PurchaseService(purchase_repo, course_repo, product_repo, enrollment_repo, safepay_client)
 
 
 # ============================================================================
@@ -367,16 +371,16 @@ def download_product(
 # Purchase Endpoints
 # ============================================================================
 
-@router.post("/purchases", response_model=PurchaseResponse, status_code=status.HTTP_201_CREATED)
-def create_purchase(
+@router.post("/purchases", status_code=status.HTTP_201_CREATED)
+async def create_purchase(
     purchase_data: PurchaseCreate,
     current_user: Annotated[User, Depends(get_current_user)],
     service: PurchaseService = Depends(get_purchase_service)
 ):
     """
-    Create a new purchase for a course or product.
+    Create a new purchase and initiate payment session (Phase 6).
 
-    Creates a purchase in PENDING status. Admin must mark it as COMPLETED later.
+    Creates a purchase in PENDING status and initiates Safepay payment session.
 
     Rules:
     - Item must exist and be published
@@ -390,13 +394,29 @@ def create_purchase(
         service: Purchase service
 
     Returns:
-        Created purchase (status=PENDING)
+        Dict containing:
+            - purchase: Purchase object (status=PENDING)
+            - tracker_token: Safepay tracker token
+            - message: Instructions for next steps
 
     Raises:
         400: Invalid purchase (draft, free, duplicate, price mismatch)
         404: Item not found
+        502: Payment provider unavailable
     """
-    return service.create_purchase(current_user, purchase_data)
+    result = await service.create_purchase(current_user, purchase_data)
+
+    # IMPORTANT: Checkout URL not yet verified - manual browser test required
+    # DO NOT return fabricated checkout URL here
+    # Return tracker token and payment session info for now
+
+    return {
+        "purchase": PurchaseResponse.model_validate(result["purchase"]),
+        "tracker_token": result["tracker_token"],
+        "payment_provider": "safepay",
+        "payment_state": result["payment_session"].get("tracker_state"),
+        "message": "Purchase created. Payment session initiated. Checkout flow requires manual verification."
+    }
 
 
 @router.get("/purchases", response_model=List[PurchaseWithDetails])

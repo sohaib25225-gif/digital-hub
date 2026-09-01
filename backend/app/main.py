@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
-from app.routers import auth, courses, products, admin, uploads, me
+from app.routers import auth, courses, products, admin, uploads, me, webhooks
 
 # Create FastAPI application instance
 app = FastAPI(
@@ -44,3 +44,4 @@ app.include_router(products.router, prefix="/products", tags=["Products"])
 app.include_router(admin.router, prefix="/admin", tags=["Admin"])
 app.include_router(uploads.router, prefix="/uploads", tags=["Uploads"])
 app.include_router(me.router, prefix="/me", tags=["User Protected"])
+app.include_router(webhooks.router, prefix="/webhooks", tags=["Webhooks"])

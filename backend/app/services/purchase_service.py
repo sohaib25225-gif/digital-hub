@@ -385,3 +385,131 @@ class PurchaseService:
         if not existing_enrollment:
             # Create enrollment
             self.enrollment_repo.create_enrollment(user_id, course_id)
+
+    # ============================================================================
+    # Webhook Processing (Phase 6)
+    # ============================================================================
+
+    def process_successful_payment(
+        self,
+        purchase_id: uuid.UUID,
+        tracker_token: str,
+        payment_method: str = None
+    ) -> Purchase:
+        """
+        Process successful payment webhook from Safepay.
+
+        VERIFIED webhook data:
+        - Event: payment.succeeded
+        - State: TRACKER_ENDED
+        - Tracker: data.tracker
+        - Order ID: data.metadata.data.order_id
+
+        Idempotent: Safe to call on already-completed purchases.
+
+        Args:
+            purchase_id: Purchase UUID (from metadata.order_id)
+            tracker_token: Safepay tracker token
+            payment_method: Payment method used (optional)
+
+        Returns:
+            Updated purchase
+
+        Raises:
+            HTTPException: If purchase not found or tracker mismatch
+        """
+        purchase = self.purchase_repo.get_purchase_by_id(purchase_id)
+
+        if not purchase:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Purchase not found"
+            )
+
+        # Verify tracker token matches (security check)
+        if purchase.payment_provider_tx_id != tracker_token:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Tracker token mismatch"
+            )
+
+        # If already completed, return as-is (idempotent)
+        if purchase.status == PurchaseStatus.COMPLETED:
+            return purchase
+
+        # Cannot transition from failed to completed
+        if purchase.status == PurchaseStatus.FAILED:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot complete a failed purchase"
+            )
+
+        # Update purchase status to completed
+        purchase = self.purchase_repo.update_status(purchase, PurchaseStatus.COMPLETED)
+
+        # Update payment method if provided
+        if payment_method:
+            self.purchase_repo.update_payment_method(purchase, payment_method)
+
+        # If course purchase, auto-enroll user
+        if purchase.course_id:
+            self._auto_enroll_user(purchase.user_id, purchase.course_id)
+
+        return purchase
+
+    def process_failed_payment(
+        self,
+        purchase_id: uuid.UUID,
+        tracker_token: str
+    ) -> Purchase:
+        """
+        Process failed payment webhook from Safepay.
+
+        VERIFIED webhook data:
+        - Event: payment.failed
+        - State: TRACKER_ENROLLED
+        - Tracker: data.tracker
+        - Order ID: data.metadata.data.order_id
+
+        Idempotent: Safe to call on already-failed purchases.
+
+        Args:
+            purchase_id: Purchase UUID (from metadata.order_id)
+            tracker_token: Safepay tracker token
+
+        Returns:
+            Updated purchase
+
+        Raises:
+            HTTPException: If purchase not found or tracker mismatch
+        """
+        purchase = self.purchase_repo.get_purchase_by_id(purchase_id)
+
+        if not purchase:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Purchase not found"
+            )
+
+        # Verify tracker token matches (security check)
+        if purchase.payment_provider_tx_id != tracker_token:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Tracker token mismatch"
+            )
+
+        # If already failed, return as-is (idempotent)
+        if purchase.status == PurchaseStatus.FAILED:
+            return purchase
+
+        # Cannot fail a completed purchase
+        if purchase.status == PurchaseStatus.COMPLETED:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot fail a completed purchase"
+            )
+
+        # Update status to failed
+        purchase = self.purchase_repo.update_status(purchase, PurchaseStatus.FAILED)
+
+        return purchase

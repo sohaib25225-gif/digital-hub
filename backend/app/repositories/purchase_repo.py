@@ -298,3 +298,23 @@ class PurchaseRepository:
             .filter(Purchase.payment_provider_tx_id == provider_tx_id)
             .first()
         )
+
+    def update_payment_method(
+        self,
+        purchase: Purchase,
+        payment_method: str
+    ) -> Purchase:
+        """
+        Update payment method used for purchase (Phase 6).
+
+        Args:
+            purchase: Purchase to update
+            payment_method: Payment method (e.g., "card", "wallet")
+
+        Returns:
+            Updated purchase
+        """
+        purchase.payment_method = payment_method
+        self.db.commit()
+        self.db.refresh(purchase)
+        return purchase

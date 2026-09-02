@@ -7,6 +7,9 @@ export interface Purchase {
   currency: string;
   status: 'pending' | 'completed' | 'failed';
   created_at: string;
+  payment_provider_tx_id?: string | null;
+  payment_method?: string | null;
+  updated_at?: string | null;
 }
 
 export interface PurchaseWithDetails extends Purchase {
@@ -19,4 +22,25 @@ export interface CreatePurchaseRequest {
   product_id?: string;
   amount: number;
   currency: string;
+}
+
+// Phase 6 Stage 7: Payment session response types
+export interface NextActions {
+  CYBERSOURCE?: {
+    kind: string;
+    capture_context?: string; // JWT if provided
+    [key: string]: any;
+  };
+  [key: string]: any;
+}
+
+export interface CreatePurchaseResponse {
+  purchase: Purchase;
+  tracker_token: string;
+  payment_provider: string;
+  payment_state: string;
+  intent?: string;
+  mode?: string;
+  next_actions?: NextActions;
+  message: string;
 }

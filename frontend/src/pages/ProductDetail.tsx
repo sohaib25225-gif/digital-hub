@@ -6,6 +6,7 @@ import { useAuth } from '../hooks/useAuth';
 import { Product } from '../types/product';
 import Loader from '../components/common/Loader';
 import Button from '../components/common/Button';
+import { handlePaymentResponse } from '../utils/paymentHandler';
 
 export default function ProductDetail() {
   const { slug } = useParams<{ slug: string }>();
@@ -50,20 +51,33 @@ export default function ProductDetail() {
   }, [slug, isAuthenticated]);
 
   const handlePurchase = async () => {
-    if (!product || !isAuthenticated) return;
+    if (!product || !isAuthenticated || purchasing) return;
 
     setPurchasing(true);
     setError('');
     setSuccessMessage('');
 
     try {
-      await purchasesAPI.createPurchase({
+      const response = await purchasesAPI.createPurchase({
         product_id: product.id,
         amount: product.price,
-        currency: 'USD'
+        currency: 'PKR'  // Phase 6: Safepay uses PKR
       });
-      setPurchaseStatus('pending');
-      setSuccessMessage('Purchase created! Awaiting admin approval.');
+
+      // Phase 6 Stage 7: Handle payment session response using payment handler
+      const result = handlePaymentResponse(response);
+
+      if (result.success) {
+        if (result.action === 'redirect' && result.data?.url) {
+          // Redirect to payment page
+          window.location.href = result.data.url;
+          return;
+        }
+      } else {
+        // Payment flow not configured or error
+        setError(result.message);
+        setPurchaseStatus('pending');
+      }
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Purchase failed. Please try again.');
     } finally {

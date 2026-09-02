@@ -11,6 +11,8 @@ import Register from '../pages/Register'
 import Dashboard from '../pages/student/Dashboard'
 import MyCourses from '../pages/student/MyCourses'
 import MyPurchases from '../pages/student/MyPurchases'
+import PaymentSuccess from '../pages/PaymentSuccess'
+import PaymentFailure from '../pages/PaymentFailure'
 import AdminDashboard from '../pages/admin/Dashboard'
 import ManageCourses from '../pages/admin/ManageCourses'
 import CreateCourse from '../pages/admin/CreateCourse'
@@ -38,6 +40,8 @@ function AppRoutes() {
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/my-courses" element={<MyCourses />} />
           <Route path="/my-purchases" element={<MyPurchases />} />
+          <Route path="/payment/success" element={<PaymentSuccess />} />
+          <Route path="/payment/failure" element={<PaymentFailure />} />
         </Route>
 
         {/* Protected admin routes */}

@@ -406,16 +406,19 @@ async def create_purchase(
     """
     result = await service.create_purchase(current_user, purchase_data)
 
-    # IMPORTANT: Checkout URL not yet verified - manual browser test required
-    # DO NOT return fabricated checkout URL here
-    # Return tracker token and payment session info for now
+    # Phase 6 Stage 7: Return payment session details for frontend
+    # Frontend needs next_actions to determine payment flow
+    payment_session = result["payment_session"]
 
     return {
         "purchase": PurchaseResponse.model_validate(result["purchase"]),
         "tracker_token": result["tracker_token"],
         "payment_provider": "safepay",
-        "payment_state": result["payment_session"].get("tracker_state"),
-        "message": "Purchase created. Payment session initiated. Checkout flow requires manual verification."
+        "payment_state": payment_session.get("tracker_state"),
+        "intent": payment_session.get("intent"),
+        "mode": payment_session.get("mode"),
+        "next_actions": payment_session.get("next_actions", {}),
+        "message": "Purchase created. Complete payment to activate access."
     }
 
 
